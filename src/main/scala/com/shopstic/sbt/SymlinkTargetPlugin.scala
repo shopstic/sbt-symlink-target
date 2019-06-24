@@ -14,7 +14,7 @@ object SymlinkTargetPlugin extends AutoPlugin {
 
   import autoImport._
 
-  private def createLink(src: File, dest: File) = {
+  private def createLink(src: File, dest: File): Unit = {
     val srcPath = src.toPath
     val destPath = dest.toPath
 
@@ -22,31 +22,55 @@ object SymlinkTargetPlugin extends AutoPlugin {
     IO.createDirectory(dest)
 
     if (Files.exists(srcPath, LinkOption.NOFOLLOW_LINKS) &&
-      (!Files.isSymbolicLink(srcPath) || srcPath.toRealPath().compareTo(destPath) != 0)) {
+      (!Files.isSymbolicLink(srcPath) || srcPath
+        .toRealPath()
+        .compareTo(destPath) != 0)) {
       IO.delete(src)
     }
 
     if (!Files.exists(srcPath, LinkOption.NOFOLLOW_LINKS)) {
-      Files.createSymbolicLink(srcPath, destPath)
+      val _ = Files.createSymbolicLink(srcPath, destPath)
     }
   }
 
-  override lazy val projectSettings = Seq(
-    target := {
-      val projectName = name.value
-      val targetSrc = target.value
-      val targetDest = symlinkTargetRoot.value / projectName
+  private lazy val createSymlinks = taskKey[Unit]("Create symlinks")
+  private lazy val deleteSymlinkTargetRoot = taskKey[Unit]("Delete symlinks")
+  private lazy val deleteTargetStreams = taskKey[Unit]("Delete target streams")
 
-      createLink(targetSrc / "streams", targetDest / "streams")
-      createLink(targetSrc / "test-reports", targetDest / "test-reports")
-      createLink(targetSrc / "docker", targetDest / "docker")
-      createLink(targetSrc / "universal", targetDest / "universal")
-      createLink(targetSrc / "scala-2.12" / "classes", targetDest / "scala-2.12" / "classes")
-      createLink(targetSrc / "scala-2.12" / "api", targetDest / "scala-2.12" / "api")
-      createLink(targetSrc / "scala-2.12" / "test-classes", targetDest / "scala-2.12" / "test-classes")
-      createLink(targetSrc / "scala-2.12" / "resolution-cache", targetDest / "scala-2.12" / "resolution-cache")
+  override lazy val projectSettings =
+    Seq(
+      createSymlinks := {
+        val projectName = name.value
+        val targetSrc = target.value
+        val targetDest = symlinkTargetRoot.value / projectName
 
-      targetSrc
-    }
-  )
+        streams.value.log.info(s"Creating target symlinks: src=$targetSrc dest=$targetDest")
+
+        Seq("streams", "test-reports", "docker", "universal")
+          .foreach { dir =>
+            createLink(targetSrc / dir, targetDest / dir)
+          }
+
+        Seq("classes", "test-classes", "resolution-cache")
+          .foreach { dir =>
+            createLink(
+              targetSrc / "scala-2.12" / dir,
+              targetDest / "scala-2.12" / dir
+            )
+          }
+      },
+      deleteSymlinkTargetRoot := {
+        val file = symlinkTargetRoot.value / name.value
+        streams.value.log.info(s"Deleting target symlink root: $file")
+        IO.delete(file)
+      },
+      deleteTargetStreams := {
+        val file = target.value / "streams"
+        streams.value.log.info(s"Deleting target streams: $file")
+        IO.delete(file)
+      },
+      clean := (deleteTargetStreams dependsOn (deleteSymlinkTargetRoot dependsOn clean)).value,
+      Test / compile := ((Test / compile) dependsOn createSymlinks).value,
+      Compile / compile := ((Compile / compile) dependsOn createSymlinks).value
+    )
 }
