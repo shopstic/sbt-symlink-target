@@ -46,9 +46,9 @@ scalacOptions ++= Seq(
   "-opt-inline-from:**",
   "-opt:l:method"
 )
-version := "0.0.28"
+version := "0.0.29"
 organization := "com.shopstic"
-scalaVersion := "2.12.8"
+scalaVersion := "2.12.10"
 
 sbtPlugin := true
 name := "sbt-symlink-target"
